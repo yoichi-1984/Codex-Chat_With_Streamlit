@@ -1,10 +1,14 @@
 import os
 import json
-import streamlit as st
-from openai import AzureOpenAI
-from dotenv import load_dotenv
+import sys  # standard library
 import time
-from streamlit_ace import st_ace # Code Editor
+import tempfile
+import subprocess
+
+import streamlit as st  # third party
+from dotenv import load_dotenv
+from openai import AzureOpenAI
+from streamlit_ace import st_ace  # Code Editor
 
 # --- 定数定義 ---
 # .envから読み込むため、ここのAPIバージョンは不要になりました
@@ -195,7 +199,7 @@ def run_chatbot_app():
         )
         
         # --- Pythonコードエディタ (Canvas) ---
-        st.subheader("🔧 Pythonコードエディタ")
+        st.subheader("🔧 コードエディタ")
 
         multi_code_enabled = st.checkbox("マルチコードを有効にする", value=st.session_state.multi_code_enabled)
 
@@ -256,6 +260,79 @@ def run_chatbot_app():
                 st.session_state.stop_generation = False
                 st.session_state.last_usage_info = None
                 st.rerun()
+        
+        # --- NEW: AIによるpylint結果の分析機能 ---
+        if st.button("AIによるコード検証(Python限定)", key="validate_code_ai", use_container_width=True, help="pylintでコードを検証し、結果をAIが分析して重要度を判断します。"):
+            with st.spinner("pylintでコードを検証し、AIが分析しています..."):
+                full_pylint_report = ""
+                code_for_prompt = ""
+                
+                # 1. 全てのCanvasのコードに対してpylintを実行
+                for i, canvas_code in enumerate(st.session_state.python_canvases):
+                    if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
+                        continue
+                    
+                    code_for_prompt += f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
+                    processed_code = canvas_code.replace('\r\n', '\n')
+                    tmp_file_path = ""
+                    try:
+                        with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
+                            tmp_file_path = tmp_file.name
+                            tmp_file.write(processed_code)
+                            tmp_file.flush()
+
+                        result = subprocess.run(
+                            [sys.executable, "-m", "pylint", tmp_file_path],
+                            capture_output=True, text=True, encoding='utf-8', check=False
+                        )
+                        stdout_str = result.stdout
+                        
+                        issues = [line for line in stdout_str.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
+                        if issues:
+                            cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
+                            full_pylint_report += f"# Canvas-{i + 1} のpylintレポート\n" + "\n".join(cleaned_issues) + "\n"
+                    finally:
+                        if os.path.exists(tmp_file_path):
+                            os.remove(tmp_file_path)
+
+            # 2. pylintのレポート結果に基づいて処理を分岐
+            if not full_pylint_report.strip():
+                st.sidebar.success("✅ pylintによる検証が完了しました。問題は見つかりませんでした。")
+            else:
+                # 3. AIに評価を依頼するためのプロンプトを生成
+                validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
+以下のコードと、それに対するpylintの解析レポートをレビューしてください。
+
+# 前提条件
+- このコードはWindows環境で実行されます。
+- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
+
+# 解析対象のコード
+{code_for_prompt}
+
+# pylintの解析レポート
+```
+{full_pylint_report}
+```
+
+# あなたのタスク
+上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
+- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
+- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
+"""
+                # 4. AIの応答生成をトリガーするが、ユーザープロンプトは履歴に追加しない
+                system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
+                
+                # この検証専用の一時的なメッセージリストをセッションに追加
+                st.session_state.special_generation_messages = [
+                    system_message,
+                    {"role": "user", "content": validation_prompt}
+                ]
+                
+                st.session_state.is_generating = True
+                st.session_state.stop_generation = False
+                st.session_state.last_usage_info = None
+                st.rerun()
 
         st.header("デバッグ")
         debug_mode = st.checkbox("デバッグモードを有効にする", help="有効にすると、APIからの生の応答データがチャット欄に表示されます。", disabled=st.session_state.is_generating)
@@ -286,10 +363,12 @@ def run_chatbot_app():
 
     # メインチャット画面
     else:
-        for message in st.session_state.messages:
-            if message["role"] != "system":
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
+        # AI検証機能からの特別なリクエストでない場合のみ、通常のメッセージ履歴を表示
+        if "special_generation_messages" not in st.session_state:
+            for message in st.session_state.messages:
+                if message["role"] != "system":
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
         
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant" and st.session_state.last_usage_info:
             usage = st.session_state.last_usage_info
@@ -319,11 +398,24 @@ def run_chatbot_app():
             full_response = ""
             final_response_object = None
             placeholder = st.empty()
+            is_special_generation = "special_generation_messages" in st.session_state
+
             try:
-                input_prompt = format_history_for_input(
-                    st.session_state.messages,
-                    st.session_state.python_canvases
-                )
+                # AI検証ボタンからの特別なリクエストか、通常のチャットかを判断
+                if is_special_generation:
+                    input_prompt = format_history_for_input(
+                        st.session_state.special_generation_messages,
+                        [] # キャンバスコードはプロンプトに内包されているため不要
+                    )
+                    # 使用後は削除して通常モードに戻す
+                    del st.session_state.special_generation_messages
+                else:
+                    # 通常のチャットの場合
+                    input_prompt = format_history_for_input(
+                        st.session_state.messages,
+                        st.session_state.python_canvases
+                    )
+
                 stream = client.responses.create(
                     model=deployment_name,
                     input=input_prompt,
@@ -381,10 +473,10 @@ def run_chatbot_app():
                     }
 
             if full_response:
+                # 通常のチャット履歴にアシスタントの最終回答を追加
                 st.session_state.messages.append({"role": "assistant", "content": full_response})
             
             st.rerun() 
 
 if __name__ == "__main__":
     run_chatbot_app()
-
