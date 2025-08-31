@@ -215,7 +215,6 @@ def run_chatbot_app():
                 st.rerun()
 
         if st.session_state.multi_code_enabled:
-            # --- マルチコードモード ---
             for i, canvas_content in enumerate(st.session_state.python_canvases):
                 st.write(f"**Canvas-{i + 1}**")
                 updated_content = st_ace(
@@ -229,146 +228,8 @@ def run_chatbot_app():
                     st.session_state.python_canvases[i] = updated_content
                     st.session_state.canvas_key_counter += 1
                     st.rerun()
-
-                # --- Canvasごとの個別操作ボタン ---
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("クリア", key=f"clear_canvas_{i}", use_container_width=True):
-                        st.session_state.python_canvases[i] = "# ここにPythonコードを書いてください\n"
-                        st.session_state.canvas_key_counter += 1
-                        st.rerun()
-                with col2:
-                    if st.button("レビュー", key=f"review_canvas_{i}", use_container_width=True):
-                        review_prompt = f"### 参考コード (Canvas-{i+1})\nこのCanvasのコードをレビューし、改善点を提案してください。"
-                        st.session_state.messages.append({"role": "user", "content": review_prompt})
-                        st.session_state.is_generating = True
-                        st.session_state.stop_generation = False
-                        st.session_state.last_usage_info = None
-                        st.rerun()
-                with col3:
-                    if st.button("検証", key=f"validate_canvas_{i}", use_container_width=True, help=f"pylintでCanvas-{i+1}のコードを検証し、結果をAIが分析します。"):
-                        with st.spinner(f"Canvas-{i+1} を検証中..."):
-                            canvas_code = st.session_state.python_canvases[i]
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
-                                st.toast(f"Canvas-{i+1}には検証するコードがありません。", icon="⚠️")
-                            else:
-                                code_for_prompt = f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
-                                processed_code = canvas_code.replace('\r\n', '\n')
-                                tmp_file_path = ""
-                                pylint_report = ""
-                                try:
-                                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                        tmp_file_path = tmp_file.name
-                                        tmp_file.write(processed_code)
-                                        tmp_file.flush()
-                                    result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                    issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                    if issues:
-                                        cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                        pylint_report = "\n".join(cleaned_issues)
-                                finally:
-                                    if os.path.exists(tmp_file_path):
-                                        os.remove(tmp_file_path)
-
-                                if not pylint_report.strip():
-                                    st.sidebar.success(f"✅ Canvas-{i+1}: pylint検証完了。問題なし。")
-                                else:
-                                    validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
-以下のコードと、それに対するpylintの解析レポートをレビューしてください。
-# 前提条件
-- このコードはWindows環境で実行されます。
-- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
-# 解析対象のコード
-{code_for_prompt}
-# pylintの解析レポート
-{pylint_report}
-
-# あなたのタスク
-上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
-- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
-- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
-"""
-                                    system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                                    st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                                    st.session_state.is_generating = True
-                                    st.session_state.stop_generation = False
-                                    st.session_state.last_usage_info = None
-                                    st.rerun()
-                st.divider()
-            
-            # --- 全Canvas対象の一括操作ボタン ---
-            st.subheader("一括操作")
-            g_col1, g_col2, g_col3 = st.columns(3)
-            with g_col1:
-                if st.button("すべてクリア", key="clear_all_canvases", use_container_width=True):
-                    st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"] * len(st.session_state.python_canvases)
-                    st.session_state.canvas_key_counter += 1
-                    st.rerun()
-            with g_col2:
-                if st.button("すべてレビュー", key="review_all_canvases", use_container_width=True):
-                    review_prompt = "### 参考コード (Canvas)\n上記のすべてのコードをレビューし、改善点を提案してください。"
-                    st.session_state.messages.append({"role": "user", "content": review_prompt})
-                    st.session_state.is_generating = True
-                    st.session_state.stop_generation = False
-                    st.session_state.last_usage_info = None
-                    st.rerun()
-            with g_col3:
-                if st.button("すべて検証", key="validate_all_canvases_ai", use_container_width=True, help="pylintですべてのコードを検証し、結果をAIが分析して重要度を判断します。"):
-                    # This is the original full validation logic
-                    with st.spinner("すべてのコードを検証し、AIが分析しています..."):
-                        full_pylint_report = ""
-                        code_for_prompt = ""
-                        has_code_to_validate = False
-                        for i, canvas_code in enumerate(st.session_state.python_canvases):
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
-                                continue
-                            has_code_to_validate = True
-                            code_for_prompt += f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
-                            processed_code = canvas_code.replace('\r\n', '\n')
-                            tmp_file_path = ""
-                            try:
-                                with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                    tmp_file_path = tmp_file.name
-                                    tmp_file.write(processed_code)
-                                    tmp_file.flush()
-                                result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                if issues:
-                                    cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                    full_pylint_report += f"# Canvas-{i + 1} のpylintレポート\n" + "\n".join(cleaned_issues) + "\n"
-                            finally:
-                                if os.path.exists(tmp_file_path):
-                                    os.remove(tmp_file_path)
-                        
-                        if not has_code_to_validate:
-                            st.toast("検証するコードがありません。", icon="⚠️")
-                        elif not full_pylint_report.strip():
-                            st.sidebar.success("✅ pylintによる検証が完了しました。問題は見つかりませんでした。")
-                        else:
-                            validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
-以下のコードと、それに対するpylintの解析レポートをレビューしてください。
-# 前提条件
-- このコードはWindows環境で実行されます。
-- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
-# 解析対象のコード
-{code_for_prompt}
-# pylintの解析レポート
-{full_pylint_report}
-
-# あなたのタスク
-上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
-- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
-- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
-"""
-                            system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                            st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                            st.session_state.is_generating = True
-                            st.session_state.stop_generation = False
-                            st.session_state.last_usage_info = None
-                            st.rerun()
-
         else:
-            # --- シングルコードモード ---
+            # マルチコードが無効な場合は、以前の単一Canvasを維持
             st.session_state.python_canvases = [st.session_state.python_canvases[0]]
             updated_content = st_ace(
                 value=st.session_state.python_canvases[0],
@@ -382,70 +243,96 @@ def run_chatbot_app():
                 st.session_state.canvas_key_counter += 1
                 st.rerun()
 
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button("クリア", key="clear_canvas_single", use_container_width=True):
-                    st.session_state.python_canvases[0] = "# ここにPythonコードを書いてください\n"
-                    st.session_state.canvas_key_counter += 1
-                    st.rerun()
-            with col2:
-                if st.button("レビュー", key="review_canvas_single", use_container_width=True):
-                    review_prompt = "### 参考コード (Canvas)\n上記のコードをレビューし、改善点を提案してください。"
-                    st.session_state.messages.append({"role": "user", "content": review_prompt})
-                    st.session_state.is_generating = True
-                    st.session_state.stop_generation = False
-                    st.session_state.last_usage_info = None
-                    st.rerun()
-            with col3:
-                if st.button("検証", key="validate_canvas_single", use_container_width=True, help="pylintでこのコードを検証し、結果をAIが分析します。"):
-                    # This is the same logic as the individual button in multi-code mode, but for index 0
-                    with st.spinner(f"コードを検証し、AIが分析しています..."):
-                        canvas_code = st.session_state.python_canvases[0]
-                        if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
-                            st.toast("検証するコードがありません。", icon="⚠️")
-                        else:
-                            code_for_prompt = f"\n\n# 解析対象のコード\n```python\n{canvas_code}\n```"
-                            processed_code = canvas_code.replace('\r\n', '\n')
-                            tmp_file_path = ""
-                            pylint_report = ""
-                            try:
-                                with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                    tmp_file_path = tmp_file.name
-                                    tmp_file.write(processed_code)
-                                    tmp_file.flush()
-                                result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                if issues:
-                                    cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                    pylint_report = "\n".join(cleaned_issues)
-                            finally:
-                                if os.path.exists(tmp_file_path):
-                                    os.remove(tmp_file_path)
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("クリア", key="clear_canvas", use_container_width=True):
+                if st.session_state.multi_code_enabled:
+                    st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"] * len(st.session_state.python_canvases)
+                else:
+                    st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"]
+                st.session_state.canvas_key_counter += 1
+                st.rerun()
+        with col2:
+            if st.button("このコードをレビュー", key="review_canvas", use_container_width=True):
+                review_prompt = "### 参考コード (Canvas)\n上記のコードをレビューし、改善点を提案してください。"
+                st.session_state.messages.append({"role": "user", "content": review_prompt})
+                st.session_state.is_generating = True
+                st.session_state.stop_generation = False
+                st.session_state.last_usage_info = None
+                st.rerun()
+        
+        # --- NEW: AIによるpylint結果の分析機能 ---
+        if st.button("AIによるコード検証(Python限定)", key="validate_code_ai", use_container_width=True, help="pylintでコードを検証し、結果をAIが分析して重要度を判断します。"):
+            with st.spinner("pylintでコードを検証し、AIが分析しています..."):
+                full_pylint_report = ""
+                code_for_prompt = ""
+                
+                # 1. 全てのCanvasのコードに対してpylintを実行
+                for i, canvas_code in enumerate(st.session_state.python_canvases):
+                    if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
+                        continue
+                    
+                    code_for_prompt += f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
+                    processed_code = canvas_code.replace('\r\n', '\n')
+                    tmp_file_path = ""
+                    try:
+                        with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
+                            tmp_file_path = tmp_file.name
+                            tmp_file.write(processed_code)
+                            tmp_file.flush()
 
-                            if not pylint_report.strip():
-                                st.sidebar.success("✅ pylint検証完了。問題なし。")
-                            else:
-                                validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
+                        result = subprocess.run(
+                            [sys.executable, "-m", "pylint", tmp_file_path],
+                            capture_output=True, text=True, encoding='utf-8', check=False
+                        )
+                        stdout_str = result.stdout
+                        
+                        issues = [line for line in stdout_str.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
+                        if issues:
+                            cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
+                            full_pylint_report += f"# Canvas-{i + 1} のpylintレポート\n" + "\n".join(cleaned_issues) + "\n"
+                    finally:
+                        if os.path.exists(tmp_file_path):
+                            os.remove(tmp_file_path)
+
+            # 2. pylintのレポート結果に基づいて処理を分岐
+            if not full_pylint_report.strip():
+                st.sidebar.success("✅ pylintによる検証が完了しました。問題は見つかりませんでした。")
+            else:
+                # 3. AIに評価を依頼するためのプロンプトを生成
+                validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
 以下のコードと、それに対するpylintの解析レポートをレビューしてください。
+
 # 前提条件
 - このコードはWindows環境で実行されます。
 - 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
+
 # 解析対象のコード
 {code_for_prompt}
+
 # pylintの解析レポート
-{pylint_report}
+```
+{full_pylint_report}
+```
 
 # あなたのタスク
 上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
 - **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
 - **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
 """
-                                system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                                st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                                st.session_state.is_generating = True
-                                st.session_state.stop_generation = False
-                                st.session_state.last_usage_info = None
-                                st.rerun()
+                # 4. AIの応答生成をトリガーするが、ユーザープロンプトは履歴に追加しない
+                system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
+                
+                # この検証専用の一時的なメッセージリストをセッションに追加
+                st.session_state.special_generation_messages = [
+                    system_message,
+                    {"role": "user", "content": validation_prompt}
+                ]
+                
+                st.session_state.is_generating = True
+                st.session_state.stop_generation = False
+                st.session_state.last_usage_info = None
+                st.rerun()
 
         st.header("デバッグ")
         debug_mode = st.checkbox("デバッグモードを有効にする", help="有効にすると、APIからの生の応答データがチャット欄に表示されます。", disabled=st.session_state.is_generating)
@@ -481,8 +368,7 @@ def run_chatbot_app():
             for message in st.session_state.messages:
                 if message["role"] != "system":
                     with st.chat_message(message["role"]):
-                        # 改行文字(\n)を、Markdownの改行(スペース2つ + \n)に置換する
-                        st.markdown(message["content"].replace('\n', '  \n'))
+                        st.markdown(message["content"])
         
         if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant" and st.session_state.last_usage_info:
             usage = st.session_state.last_usage_info
