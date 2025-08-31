@@ -34,7 +34,7 @@ def format_history_for_input(messages, canvases):
 
     # マルチコード対応: 複数のCanvasコードをプロンプトに含める
     for i, canvas_code in enumerate(canvases):
-        if canvas_code and canvas_code.strip() != "# ここにPythonコードを書いてください":
+        if canvas_code and canvas_code.strip() != "# ここにコードを書いてください":
             formatted_string += f"\n\n### 参考コード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
 
     formatted_string += "\n\n---\n\n### 会話履歴\n"
@@ -148,7 +148,7 @@ def run_chatbot_app():
         st.session_state.last_usage_info = None
     # マルチコード対応: 単一の文字列からリストに変更
     if "python_canvases" not in st.session_state:
-        st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"]
+        st.session_state.python_canvases = ["# ここにコードを書いてください\n"]
     if "multi_code_enabled" not in st.session_state:
         st.session_state.multi_code_enabled = False
     if "stop_generation" not in st.session_state:
@@ -165,7 +165,7 @@ def run_chatbot_app():
             st.session_state.system_role_defined = False
             st.session_state.total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
             st.session_state.last_usage_info = None
-            st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"]
+            st.session_state.python_canvases = ["# ここにコードを書いてください\n"]
             st.session_state.multi_code_enabled = False
             st.rerun()
 
@@ -210,7 +210,7 @@ def run_chatbot_app():
 
         if multi_code_enabled and len(st.session_state.python_canvases) < MAX_CANVASES:
             if st.button("次のコードを追加", use_container_width=True):
-                st.session_state.python_canvases.append("# ここにPythonコードを書いてください\n")
+                st.session_state.python_canvases.append("# ここにコードを書いてください\n")
                 st.session_state.canvas_key_counter += 1
                 st.rerun()
 
@@ -234,7 +234,7 @@ def run_chatbot_app():
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button("クリア", key=f"clear_canvas_{i}", use_container_width=True):
-                        st.session_state.python_canvases[i] = "# ここにPythonコードを書いてください\n"
+                        st.session_state.python_canvases[i] = "# ここにコードを書いてください\n"
                         st.session_state.canvas_key_counter += 1
                         st.rerun()
                 with col2:
@@ -249,7 +249,7 @@ def run_chatbot_app():
                     if st.button("検証", key=f"validate_canvas_{i}", use_container_width=True, help=f"pylintでCanvas-{i+1}のコードを検証し、結果をAIが分析します。"):
                         with st.spinner(f"Canvas-{i+1} を検証中..."):
                             canvas_code = st.session_state.python_canvases[i]
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
+                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
                                 st.toast(f"Canvas-{i+1}には検証するコードがありません。", icon="⚠️")
                             else:
                                 code_for_prompt = f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
@@ -301,7 +301,7 @@ def run_chatbot_app():
             g_col1, g_col2, g_col3 = st.columns(3)
             with g_col1:
                 if st.button("すべてクリア", key="clear_all_canvases", use_container_width=True):
-                    st.session_state.python_canvases = ["# ここにPythonコードを書いてください\n"] * len(st.session_state.python_canvases)
+                    st.session_state.python_canvases = ["# ここにコードを書いてください\n"] * len(st.session_state.python_canvases)
                     st.session_state.canvas_key_counter += 1
                     st.rerun()
             with g_col2:
@@ -320,7 +320,7 @@ def run_chatbot_app():
                         code_for_prompt = ""
                         has_code_to_validate = False
                         for i, canvas_code in enumerate(st.session_state.python_canvases):
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
+                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
                                 continue
                             has_code_to_validate = True
                             code_for_prompt += f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
@@ -385,7 +385,7 @@ def run_chatbot_app():
             col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("クリア", key="clear_canvas_single", use_container_width=True):
-                    st.session_state.python_canvases[0] = "# ここにPythonコードを書いてください\n"
+                    st.session_state.python_canvases[0] = "# ここにコードを書いてください\n"
                     st.session_state.canvas_key_counter += 1
                     st.rerun()
             with col2:
@@ -401,7 +401,7 @@ def run_chatbot_app():
                     # This is the same logic as the individual button in multi-code mode, but for index 0
                     with st.spinner(f"コードを検証し、AIが分析しています..."):
                         canvas_code = st.session_state.python_canvases[0]
-                        if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにPythonコードを書いてください":
+                        if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
                             st.toast("検証するコードがありません。", icon="⚠️")
                         else:
                             code_for_prompt = f"\n\n# 解析対象のコード\n```python\n{canvas_code}\n```"
