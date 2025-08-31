@@ -38,9 +38,9 @@ CLIラッパー (`main_runner.py`) は `streamlit run main.py` を自動で呼�
  ├── requirements.txt  
  ├── CHANGELOG.md  
  └── src/codex_chat  
-      ├── __init__.py  
-      ├── main.py  
-      └── main_runner.py # Streamlit CLI ラッパー  
+      　├── __init__.py  
+      　├── main.py  
+      　└── main_runner.py # Streamlit CLI ラッパー  
   
 ---  
 ## インストール例  
