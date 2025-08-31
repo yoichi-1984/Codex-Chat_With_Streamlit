@@ -1,60 +1,97 @@
-Codex-chat: AIコーディングアシスタント
-概要
-このプロジェクトは、Streamlitフレームワークを使用して構築された、Azure OpenAIの「codex-mini」モデル専用のチャットボットです。「codex-mini」は、コーディングおよびCLIタスクに特化した高性能なファインチューンモデルです。
+Codex-chat with streamlit: AIコーディングアシスタント  
+  
+## Table of Contents
 
-本アプリケーションは、従来のチャット形式の対話に加え、複数のコードブロック（Canvas）をコンテキストとしてAIに提供できる「マルチコード」機能を搭載しています。これにより、既存のコードのレビュー、デバッグ、機能追加など、より複雑なコーディング作業を効率的に行えます。
+- [概要](#概要)  
+- [リポジトリ構成](#リポジトリ構成)  
+- [インストール](#インストール例)  
+- [環境設定](#環境設定)  
+- [使い方](#使い方)  
+  - [CLI ラッパー経由で起動](#cli-ラッパー経由で起動)  
+  - [直接 Streamlit 起動](#直接-streamlit-起動)  
+- [主な機能](#主な機能)  
+- [CHANGELOG](#changelog)  
+- [ライセンス](#ライセンス)  
+- [Author](#Author)  
+  
+---  
+## 概要  
+  
+`Codex-chat with streamlit` は、  
+- 自然言語をシェルコマンドに変換  
+- Python／Bash／PowerShell スクリプトの生成・編集  
+- コードのリファクタリング  
+- Streamlit ベースのチャットUI + 複数 Canvas（コードエディタ）  
 
-特徴
-codex-miniに最適化: Responses APIに特化した入出力フォーマットを採用し、モデルの性能を最大限に引き出します。
+に特化した専門家AIチャットボットです。  
+本アプリケーションは、従来のチャット形式の対話に加え、複数のコードブロック（Canvas）をコンテキストとしてAIに提供できる「マルチコード」機能を搭載しています。これにより、既存のコードのレビュー、デバッグ、機能追加など、より複雑なコーディング作業を効率的に行えます。  
 
-マルチコード機能: サイドバーから複数のPythonコードエディタ（Canvas）を有効にでき、一度に複数のコードを参照しながら対話できます。
+CLIラッパー (`main_runner.py`) は `streamlit run main.py` を自動で呼び出します。  
+  
+---  
+## リポジトリ構成  
+.  
+ ├── env/codex.env #環境変数の雛形  
+ ├── .gitignore  
+ ├── LICENSE  
+ ├── README.md  
+ ├── activate.bat  
+ ├── pyproject.toml  
+ ├── requirements.txt  
+ ├── CHANGELOG.md  
+ └── src/codex_chat  
+      ├── __init__.py  
+      ├── main.py  
+      └── main_runner.py # Streamlit CLI ラッパー  
+  
+---  
+## インストール例  
+    
+```bash  
+git clone https://github.com/ユーザ名/codex-mini.git  
+cd codex-mini  
+python3 -m venv .env  
+source .env/bin/activate  
+pip install --upgrade pip  
+pip install --upgrade pip setuptools
+pip install -r requirements.txt  
+```
+  
+---  
+## 環境設定  
+  
+プロジェクトルートに env/codex.env を作成し、以下を設定してください。  
+  
+AZURE_OPENAI_KEY=<your_api_key>  
+AZURE_OPENAI_ENDPOINT=<your_endpoint>  
+AZURE_OPENAI_DEPLOYMENT=<deployment_name>  
+AZURE_OPENAI_API_VERSION=<api_version>  
+  
+---  
+## 使い方    
+  
+pyproject.tomlに従ってインストール。  
+pip install -e .  
+その後は  
+仮想環境で「codex-chat」と打ち込めば、内部的にstreamlit run で main_runner.py が実行される。  
+  
+---  
+## 主な機能  
+### AIの役割設定:  
+ 最初の画面で、AIの役割を定義するシステムプロンプトを入力し、「この役割でチャットを開始する」ボタンをクリックします。  
+### マルチ Canvas コードエディタ（最大 20）  
+ Canvasを用いてコードをAIに効率よく読ませることができます。マルチコード機能を有効にすることで、最大20個までCanvasを拡張することも可能です。  
+### 会話履歴の JSON ダウンロード／アップロード  
+ AIの役割、チャット履歴、Canvasの内容すべてをJSON形式でダウンロードし、途中再開が可能です。  
+### デバッグモード切替  
+ デバッグモードを有効にすることで、APIからの生の応答データがチャット欄に表示されます。  
+### トークン使用量の表示・累計  
+ AIモデルの最大トークンに考慮した形でチャットができるように、最新の使用トークンを表示します。  
+  
+---  
 
-会話履歴の保存・読み込み: JSONファイル形式でチャット履歴を保存・読み込みできます。
 
-環境変数による設定: APIキーやエンドポイントなどの機密情報を.envファイルで管理します。
 
-トークン使用量の表示: 各応答のトークン使用量と累計使用量をリアルタイムで確認できます。
-
-必要な環境
-本アプリケーションをローカルで実行するには、以下の要件を満たす必要があります。
-
-Python 3.8以上
-
-Azure OpenAIサービスへのアクセス: デプロイされた「codex-mini」モデルが必要です。
-
-セットアップ方法
-リポジトリをクローン:
-
-git clone [プロジェクトのURL]
-cd [プロジェクトディレクトリ]
-
-仮想環境の作成と有効化 (推奨):
-
-python -m venv venv
-# Windows
-.\venv\Scripts\activate
-# macOS/Linux
-source venv/bin/activate
-
-依存ライブラリのインストール:
-requirements.txtファイルを使用して、必要なライブラリをインストールします。
-
-pip install -r requirements.txt
-
-環境変数の設定:
-envディレクトリ内にcodex.envという名前のファイルを作成し、以下の情報を記述します。
-
-AZURE_OPENAI_KEY="あなたのAzure OpenAIのAPIキー"
-AZURE_OPENAI_ENDPOINT="あなたのAzure OpenAIのエンドポイントURL"
-AZURE_OPENAI_DEPLOYMENT="デプロイされたcodex-miniのモデル名"
-AZURE_OPENAI_API_VERSION="モデルのAPIバージョン (例: 2025-01-01-preview)"
-
-アプリケーションの実行:
-Streamlitコマンドでアプリを起動します。
-
-streamlit run app.py
-
-使い方
 AIの役割設定: 最初の画面で、AIの役割を定義するシステムプロンプトを入力し、「この役割でチャットを開始する」ボタンをクリックします。
 
 対話: 画面下部の入力ボックスに、シェルコマンドの生成やスクリプト作成の指示を入力します。
@@ -63,4 +100,14 @@ AIの役割設定: 最初の画面で、AIの役割を定義するシステム�
 
 マルチコード: 「マルチコードを有効にする」にチェックを入れると、複数のコードエディタを追加できます。
 
-履歴: サイドバーから会話履歴をJSON形式でダウンロードしたり、読み込んだりできます。
+---  
+## CHANGELOG  
+すべてのリリース履歴は CHANGELOG.md に記載しています。  
+
+---  
+## ライセンス  
+ 本ソフトウェアは「Apache License 2.0」に準拠しています。
+
+---  
+## Author  
+ -Yoichi-1984 (<yoichi.1984.engineer@gmail.com>)  
