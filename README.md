@@ -7,8 +7,6 @@ Codex-chat with streamlit: AIコーディングアシスタント
 - [インストール](#インストール例)  
 - [環境設定](#環境設定)  
 - [使い方](#使い方)  
-  - [CLI ラッパー経由で起動](#cli-ラッパー経由で起動)  
-  - [直接 Streamlit 起動](#直接-streamlit-起動)  
 - [主な機能](#主な機能)  
 - [CHANGELOG](#changelog)  
 - [ライセンス](#ライセンス)  
