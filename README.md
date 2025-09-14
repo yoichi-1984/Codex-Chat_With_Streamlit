@@ -44,7 +44,7 @@ CLIラッパー (`main_runner.py`) は `streamlit run main.py` を自動で呼�
  ├── README.md  
  ├── activate.bat  
  ├── pyproject.toml  
- ├── sample_of_env.txt  　　
+ ├── sample_of_env.txt  
  ├── requirements.txt  
  └── CHANGELOG.md  
   
