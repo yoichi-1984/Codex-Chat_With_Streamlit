@@ -4,7 +4,7 @@
     
     [project]
     name = "codex-chat"
-    version = "0.1.5"
+    version = "0.2.0"
     description = "Codex-chat with streamlit"
     authors = [
         { name = "yoichi-1984", email = "yoichi.1984.engineer@gmail.com" },
@@ -22,7 +22,8 @@
         "python-dotenv",
         "streamlit-ace",
         "build",
-        "pylint"
+        "pylint",
+        "pyyaml"
     ]
     
     [project.scripts]

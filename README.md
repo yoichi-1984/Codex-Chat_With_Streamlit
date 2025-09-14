@@ -1,7 +1,7 @@
 Codex-chat with streamlit: AIコーディングアシスタント  
   
-## Table of Contents
-
+## Table of Contents  
+  
 - [概要](#概要)  
 - [リポジトリ構成](#リポジトリ構成)  
 - [インストール](#インストール例)  
@@ -20,27 +20,32 @@ Codex-chat with streamlit: AIコーディングアシスタント
 - Python／Bash／PowerShell スクリプトの生成・編集  
 - コードのリファクタリング  
 - Streamlit ベースのチャットUI + 複数 Canvas（コードエディタ）  
-
+  
 に特化した専門家AIチャットボットです。  
 本アプリケーションは、従来のチャット形式の対話に加え、複数のコードブロック（Canvas）をコンテキストとしてAIに提供できる「マルチコード」機能を搭載しています。これにより、既存のコードのレビュー、デバッグ、機能追加など、より複雑なコーディング作業を効率的に行えます。  
-
+  
 CLIラッパー (`main_runner.py`) は `streamlit run main.py` を自動で呼び出します。  
   
 ---  
 ## リポジトリ構成  
 .  
- ├── env/codex.env #環境変数の雛形  
+ ├── env/  
+ │ └── *.env # モデル設定ファイル (選択可能)  
+ ├── src/  
+ │ └── codex_chat/  
+ │ ├── __init__.py  
+ │ ├── main.py # Streamlit アプリケーション本体  
+ │ ├── main_runner.py # CLI からの起動用ラッパー (出典: Canvas-1)  
+ │ ├── utils.py # ヘルパー関数群 (Canvas-4)  
+ │ ├── config.py # 定数・テキスト定義 (Canvas-3)  
+ │ └── prompts.yaml # プロンプト定義 (Canvas-5)  
  ├── .gitignore  
  ├── LICENSE  
  ├── README.md  
  ├── activate.bat  
  ├── pyproject.toml  
  ├── requirements.txt  
- ├── CHANGELOG.md  
- └── src/codex_chat  
-      　├── __init__.py  
-      　├── main.py  
-      　└── main_runner.py # Streamlit CLI ラッパー  
+ └── CHANGELOG.md  
   
 ---  
 ## インストール例  
@@ -51,19 +56,20 @@ cd codex-mini
 python3 -m venv .env  
 source .env/bin/activate  
 pip install --upgrade pip  
-pip install --upgrade pip setuptools
+pip install --upgrade pip setuptools  
 pip install -r requirements.txt  
-```
+```  
   
 ---  
 ## 環境設定  
   
-プロジェクトルートに env/codex.env を作成し、以下を設定してください。  
+プロジェクトルートに env/ ディレクトリを作成し、.env ファイルを配置してください。  
   
 AZURE_OPENAI_KEY=<your_api_key>  
 AZURE_OPENAI_ENDPOINT=<your_endpoint>  
 AZURE_OPENAI_DEPLOYMENT=<deployment_name>  
 AZURE_OPENAI_API_VERSION=<api_version>  
+MAX_TOKEN=<max_token>  
   
 ---  
 ## 使い方    
@@ -73,27 +79,36 @@ pip install -e .
 その後は  
 仮想環境で「codex-chat」と打ち込めば、内部的にstreamlit run で main_runner.py が実行される。  
   
+他には  
+python -m src.codex_chat.main_runner  
+や  
+streamlit run src/codex_chat/main.py  
+でも起動できます。  
+  
 ---  
 ## 主な機能  
+### AIモデルの選択:  
+ サイドバー最上部に.envファイルの選択リストがあります。使いたいモデル(.env)を選択してください。  
 ### AIの役割設定:  
- 最初の画面で、AIの役割を定義するシステムプロンプトを入力し、「この役割でチャットを開始する」ボタンをクリックします。  
-### マルチ Canvas コードエディタ（最大 20）  
+ 最初のチャット画面で、AIの役割を定義するシステムプロンプトを入力し、「この役割でチャットを開始する」ボタンをクリックします。  
+### マルチ Canvas コードエディタ（最大 20）:  
  Canvasを用いてコードをAIに効率よく読ませることができます。マルチコード機能を有効にすることで、最大20個までCanvasを拡張することも可能です。  
-### 会話履歴の JSON ダウンロード／アップロード  
+### 会話履歴の JSON ダウンロード／アップロード:  
  AIの役割、チャット履歴、Canvasの内容すべてをJSON形式でダウンロードし、途中再開が可能です。  
-### デバッグモード切替  
- デバッグモードを有効にすることで、APIからの生の応答データがチャット欄に表示されます。  
-### トークン使用量の表示・累計  
+ チャット再開時には、AIモデルの選択情報、Canvasに記述したコード、チャット内容すべて再開できます。  
+### 応答ストリーミング＆停止ボタン:  
+ APIからの応答をリアルタイム表示し、途中停止が可能。  
+### トークン使用量の表示・累計:  
  AIモデルの最大トークンに考慮した形でチャットができるように、最新の使用トークンを表示します。  
   
 ---  
 ## CHANGELOG  
 すべてのリリース履歴は CHANGELOG.md に記載しています。  
-
+  
 ---  
 ## ライセンス  
- 本ソフトウェアは「Apache License 2.0」に準拠しています。
-
+ 本ソフトウェアは「Apache License 2.0」に準拠しています。  
+  
 ---  
 ## Author  
  -Yoichi-1984 (<yoichi.1984.engineer@gmail.com>)  

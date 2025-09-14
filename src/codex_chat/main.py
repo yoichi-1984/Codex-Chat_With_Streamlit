@@ -1,596 +1,344 @@
 import os
 import json
-import sys  # standard library
+import sys
 import time
-import tempfile
-import subprocess
 
-import streamlit as st  # third party
+import streamlit as st
 from dotenv import load_dotenv
 from openai import AzureOpenAI
-from streamlit_ace import st_ace  # Code Editor
+from streamlit_ace import st_ace
 
-# --- 定数定義 ---
-# .envから読み込むため、ここのAPIバージョンは不要になりました
-MAX_INPUT_TOKENS = 200000
-MAX_CANVASES = 20
+# --- ローカルモジュールのインポート ---
+from codex_chat import config
+from codex_chat import utils
 
-# --- ユーティリティ関数 ---
-
-def format_history_for_input(messages, canvases):
-    """
-    Streamlitのセッション履歴とCanvasコードを、
-    codex-miniのResponses APIが要求する単一の入力文字列に変換する。
-    """
-    formatted_string = ""
-    system_prompt = ""
-    
-    for message in messages:
-        if message["role"] == "system":
-            system_prompt = message["content"]
-            break
-    
-    formatted_string += system_prompt
-
-    # マルチコード対応: 複数のCanvasコードをプロンプトに含める
-    for i, canvas_code in enumerate(canvases):
-        if canvas_code and canvas_code.strip() != "# ここにコードを書いてください":
-            formatted_string += f"\n\n### 参考コード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
-
-    formatted_string += "\n\n---\n\n### 会話履歴\n"
-
-    for message in messages:
-        if message["role"] != "system":
-            formatted_string += f'{message["role"].upper()}: {message["content"]}\n\n'
-    
-    formatted_string += "ASSISTANT:"
-    return formatted_string
+# --- ヘルパー関数 (アプリケーション固有) ---
 
 def load_history():
     """
-    ファイルアップローダーの on_change コールバック。
-    会話履歴とCanvasコードを読み込む。
+    アップロードされたJSONから会話履歴とCanvasコードを読み込む
     """
-    uploaded_file = st.session_state.history_uploader
-    if uploaded_file:
-        try:
-            # 会話履歴とCanvasコードの両方を読み込む
-            loaded_data = json.load(uploaded_file)
-
-            # 新フォーマット (辞書形式) のチェック
-            if isinstance(loaded_data, dict) and "messages" in loaded_data:
-                loaded_messages = loaded_data["messages"]
-                # messagesが正しい形式かさらにチェック
-                if not (isinstance(loaded_messages, list) and all(isinstance(m, dict) and "role" in m and "content" in m for m in loaded_messages)):
-                    st.error("JSON内の 'messages' のフォーマットが不正です。")
-                    return
-                
-                st.session_state.messages = loaded_messages
-                # Canvasコードもあれば復元
-                if "python_canvas" in loaded_data:
-                    # 旧フォーマットとの互換性のため、リストに変換
-                    st.session_state.python_canvases = [loaded_data["python_canvas"]]
-                    st.session_state.multi_code_enabled = False
-                    st.session_state.canvas_key_counter += 1
-                elif "python_canvases" in loaded_data:
-                    st.session_state.python_canvases = loaded_data["python_canvases"]
-                    st.session_state.multi_code_enabled = True
-                    st.session_state.canvas_key_counter += 1
-
-                st.success("会話履歴とCanvasコードを読み込みました。")
-
-            # 旧フォーマット (リスト形式) のチェック (後方互換性のため)
-            elif isinstance(loaded_data, list) and all(isinstance(m, dict) and "role" in m and "content" in m for m in loaded_data):
-                st.session_state.messages = loaded_data
-                st.warning("古い形式の履歴ファイルを読み込みました。Canvasコードは復元されません。")
+    uploaded_file = st.session_state['history_uploader']
+    if not uploaded_file:
+        return
+    try:
+        loaded_data = json.load(uploaded_file)
+        if isinstance(loaded_data, dict) and "messages" in loaded_data:
+            st.session_state['messages'] = loaded_data["messages"]
+            if "python_canvases" in loaded_data:
+                st.session_state['python_canvases'] = loaded_data["python_canvases"]
             
-            else:
-                st.error("対応していないJSONフォーマットです。")
-                return
+            # --- ★★★★★ 変更点 (ここから) ★★★★★ ---
+            if "multi_code_enabled" in loaded_data:
+                st.session_state['multi_code_enabled'] = loaded_data["multi_code_enabled"]
+            # --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
 
-            # 共通の初期化処理
-            st.session_state.system_role_defined = True
-            st.session_state.total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-            st.session_state.last_usage_info = None
+            if "selected_env_file" in loaded_data:
+                env_files = utils.find_env_files()
+                if loaded_data["selected_env_file"] in env_files:
+                    st.session_state['selected_env_file'] = loaded_data["selected_env_file"]
+                    st.toast(f"モデル設定 `{os.path.basename(st.session_state['selected_env_file'])}` を復元しました。")
+                else:
+                    st.warning(f"履歴ファイルのモデル設定 `{os.path.basename(loaded_data['selected_env_file'])}` が見つかりません。デフォルトのモデルで再開します。")
 
-        except Exception as e:
-            st.error(f"JSON の読み込みに失敗しました: {e}")
+            st.success(config.UITexts.HISTORY_LOADED_SUCCESS)
+
+        elif isinstance(loaded_data, list): # 後方互換性
+            st.session_state['messages'] = loaded_data
+            st.warning(config.UITexts.OLD_HISTORY_FORMAT_WARNING)
+        else:
+            st.error(config.UITexts.JSON_FORMAT_ERROR)
+            return
+
+        st.session_state['system_role_defined'] = True
+        st.session_state['total_usage'] = config.SESSION_STATE_DEFAULTS["total_usage"].copy()
+        st.session_state['last_usage_info'] = None
+        st.session_state['canvas_key_counter'] += 1
+
+    except Exception as e:
+        st.error(config.UITexts.JSON_LOAD_ERROR.format(e=e))
 
 
 # --- Streamlit アプリケーション ---
 
 def run_chatbot_app():
-    st.set_page_config(page_title="codex-mini 高性能チャットボット", layout="wide")
-    st.title("🤖 codex-mini 専用チャットボット")
-
-    # 環境変数の読み込み
-    # 改善点: .envファイルのパスを変更
-    dotenv_path = "env/codex.env"
-    if os.path.exists(dotenv_path):
-        load_dotenv(dotenv_path=dotenv_path)
-        # 改善点: .env読み込み成功をフィードバック
-        st.sidebar.success(f"`{dotenv_path}` を読み込みました")
-    else:
-        st.info(f"`{dotenv_path}` が見つかりません。環境変数が直接設定されていることを前提に動作します。")
-
-    api_key = os.getenv("AZURE_OPENAI_KEY")
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+    st.set_page_config(page_title=config.UITexts.APP_TITLE, layout="wide")
+    st.title(config.UITexts.APP_TITLE)
     
-    # 実際に使用するAPIバージョンを画面に表示
-    st.caption(f"このチャットは、`Responses API (api-version={api_version or '未設定'})` を使用して動作します。")
+    PROMPTS = utils.load_prompts()
+    
+    env_files = utils.find_env_files()
+    if not env_files:
+        st.error("`env` ディレクトリに `.env` ファイルが見つかりません。アプリケーションを続行できません。")
+        st.stop()
 
-    if not all([api_key, azure_endpoint, deployment_name, api_version]):
-        st.error("エラー: 必要な環境変数 (AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION) が設定されていません。")
+    for key, value in config.SESSION_STATE_DEFAULTS.items():
+        if key not in st.session_state:
+            st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+    
+    # --- ボタン/ウィジェット操作のコールバック関数 ---
+    def handle_clear(canvas_index):
+        """指定されたCanvasの内容をクリアする"""
+        if 0 <= canvas_index < len(st.session_state['python_canvases']):
+            st.session_state['python_canvases'][canvas_index] = config.ACE_EDITOR_DEFAULT_CODE
+
+    def handle_review(canvas_index, is_multi_mode):
+        """指定されたCanvasのレビュープロンプトを生成する"""
+        if is_multi_mode:
+            prompt = config.UITexts.REVIEW_PROMPT_MULTI.format(i=canvas_index + 1)
+        else:
+            prompt = config.UITexts.REVIEW_PROMPT_SINGLE
+        st.session_state['messages'].append({"role": "user", "content": prompt})
+        st.session_state['is_generating'] = True
+
+    def handle_validation(canvas_index):
+        """指定されたCanvasのpylint検証を実行する"""
+        if 0 <= canvas_index < len(st.session_state['python_canvases']):
+            utils.run_pylint_validation(st.session_state['python_canvases'][canvas_index], canvas_index, PROMPTS)
+
+    def handle_file_upload(canvas_index, uploader_key):
+        """ファイルアップロードを処理し、Canvasに内容を反映するコールバック"""
+        uploaded_file = st.session_state.get(uploader_key)
+        if uploaded_file:
+            try:
+                file_content = uploaded_file.getvalue().decode("utf-8")
+                st.session_state['python_canvases'][canvas_index] = file_content
+                # ACEエディタを強制的に再描画させるため、キーを更新
+                st.session_state['canvas_key_counter'] += 1
+            except Exception as e:
+                st.error(f"ファイルの読み込みに失敗しました: {e}")
+
+    # --- サイドバー ---
+    with st.sidebar:
+        st.header("モデル設定")
+
+        def on_env_change():
+            for key, value in config.SESSION_STATE_DEFAULTS.items():
+                 st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+
+        selected_env = st.selectbox(
+            label="使用するAIモデル (.env) を選択",
+            options=env_files,
+            format_func=lambda x: os.path.basename(x),
+            key='selected_env_file',
+            on_change=on_env_change,
+            help="モデル設定を切り替えると、現在の会話はリセットされます。会話開始後はロックされます。",
+            disabled=st.session_state['system_role_defined'] or st.session_state['is_generating']
+        )
+
+        st.header(config.UITexts.SIDEBAR_HEADER)
+        if st.button(config.UITexts.RESET_BUTTON_LABEL, use_container_width=True, disabled=st.session_state['is_generating']):
+            for key, value in config.SESSION_STATE_DEFAULTS.items():
+                st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+            st.rerun()
+
+        st.info(config.UITexts.CODEX_MINI_INFO)
+
+        st.subheader(config.UITexts.HISTORY_SUBHEADER)
+        if not st.session_state['is_generating'] and st.session_state['messages']:
+            # --- ★★★★★ 変更点 (ここから) ★★★★★ ---
+            history_data = {
+                "messages": st.session_state['messages'],
+                "python_canvases": st.session_state['python_canvases'],
+                "selected_env_file": st.session_state.get('selected_env_file'),
+                "multi_code_enabled": st.session_state['multi_code_enabled']
+            }
+            # --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
+            st.download_button(
+                label=config.UITexts.DOWNLOAD_HISTORY_BUTTON,
+                data=json.dumps(history_data, ensure_ascii=False, indent=2),
+                file_name=f"chat_session_{int(time.time())}.json",
+                mime="application/json",
+                use_container_width=True,
+                disabled=st.session_state['is_generating']
+            )
+
+        st.file_uploader(
+            label=config.UITexts.UPLOAD_HISTORY_LABEL, type="json", key="history_uploader",
+            on_change=load_history, disabled=st.session_state['is_generating']
+        )
+        
+        st.subheader(config.UITexts.EDITOR_SUBHEADER)
+        
+        multi_code_enabled_before = st.session_state['multi_code_enabled']
+        st.session_state['multi_code_enabled'] = st.checkbox(config.UITexts.MULTI_CODE_CHECKBOX, value=st.session_state['multi_code_enabled'], disabled=st.session_state['is_generating'])
+        if multi_code_enabled_before != st.session_state['multi_code_enabled']:
+            st.rerun()
+
+        if st.session_state['multi_code_enabled']:
+            if len(st.session_state['python_canvases']) < config.MAX_CANVASES and st.button(config.UITexts.ADD_CANVAS_BUTTON, use_container_width=True, disabled=st.session_state['is_generating']):
+                st.session_state['python_canvases'].append(config.ACE_EDITOR_DEFAULT_CODE)
+                st.rerun()
+            
+            for i, content in enumerate(st.session_state['python_canvases']):
+                st.write(f"**Canvas-{i + 1}**")
+                updated_content = st_ace(value=content, key=f"ace_{i}_{st.session_state['canvas_key_counter']}", **config.ACE_EDITOR_SETTINGS, auto_update=True)
+                if updated_content != content:
+                    st.session_state['python_canvases'][i] = updated_content
+                    st.rerun()
+                
+                c1, c2, c3 = st.columns(3)
+                c1.button(config.UITexts.CLEAR_BUTTON, key=f"clear_{i}", use_container_width=True, on_click=handle_clear, args=(i,), disabled=st.session_state['is_generating'])
+                c2.button(config.UITexts.REVIEW_BUTTON, key=f"review_{i}", use_container_width=True, on_click=handle_review, args=(i, True), disabled=st.session_state['is_generating'])
+                c3.button(config.UITexts.VALIDATE_BUTTON, key=f"validate_{i}", use_container_width=True, help=config.UITexts.VALIDATE_BUTTON_HELP.format(i=i + 1), on_click=handle_validation, args=(i,), disabled=st.session_state['is_generating'])
+
+                uploader_key = f"uploader_{i}_{st.session_state['canvas_key_counter']}"
+                st.file_uploader(
+                    f"Canvas-{i+1} にファイルを読み込む",
+                    type=['txt', 'csv', 'py', 'json', 'yaml'],
+                    key=uploader_key,
+                    on_change=handle_file_upload,
+                    args=(i, uploader_key),
+                    disabled=st.session_state['is_generating']
+                )
+
+                st.divider()
+
+        else: # シングルコードモード
+            if len(st.session_state['python_canvases']) > 1:
+                st.session_state['python_canvases'] = [st.session_state['python_canvases'][0]]
+            
+            updated_content = st_ace(value=st.session_state['python_canvases'][0], key=f"ace_single_{st.session_state['canvas_key_counter']}", **config.ACE_EDITOR_SETTINGS, auto_update=True)
+            if updated_content != st.session_state['python_canvases'][0]:
+                st.session_state['python_canvases'][0] = updated_content
+                st.rerun()
+
+            c1, c2, c3 = st.columns(3)
+            c1.button(config.UITexts.CLEAR_BUTTON, key="clear_single", use_container_width=True, on_click=handle_clear, args=(0,), disabled=st.session_state['is_generating'])
+            c2.button(config.UITexts.REVIEW_BUTTON, key="review_single", use_container_width=True, on_click=handle_review, args=(0, False), disabled=st.session_state['is_generating'])
+            c3.button(config.UITexts.VALIDATE_BUTTON, key="validate_single", use_container_width=True, help=config.UITexts.VALIDATE_BUTTON_HELP.format(i=1), on_click=handle_validation, args=(0,), disabled=st.session_state['is_generating'])
+            
+            uploader_key_single = f"uploader_single_{st.session_state['canvas_key_counter']}"
+            st.file_uploader(
+                "Canvasにファイルを読み込む",
+                type=['txt', 'csv', 'py', 'json', 'yaml'],
+                key=uploader_key_single,
+                on_change=handle_file_upload,
+                args=(0, uploader_key_single),
+                disabled=st.session_state['is_generating']
+            )
+
+    # --- .envファイルのロードとクライアント設定 ---
+    if 'selected_env_file' not in st.session_state:
+        st.session_state['selected_env_file'] = env_files[0]
+
+    load_dotenv(dotenv_path=st.session_state['selected_env_file'], override=True)
+    if st.session_state.get('loaded_env') != st.session_state['selected_env_file']:
+        st.sidebar.success(f"`{os.path.basename(st.session_state['selected_env_file'])}` を読み込みました。")
+        st.session_state['loaded_env'] = st.session_state['selected_env_file']
+
+    env_vars = {
+        'api_key': os.getenv(config.AZURE_OPENAI_KEY_NAME),
+        'azure_endpoint': os.getenv(config.AZURE_OPENAI_ENDPOINT_NAME),
+        'deployment_name': os.getenv(config.AZURE_OPENAI_DEPLOYMENT_NAME),
+        'api_version': os.getenv(config.AZURE_OPENAI_API_VERSION_NAME),
+        'max_token': os.getenv('MAX_TOKEN'),
+    }
+
+    st.caption(f"このチャットは、`Responses API (api-version={env_vars['api_version'] or '未設定'})` を使用して動作します。")
+
+    required_env_keys = { "MAX_TOKEN": "MAX_TOKEN", **{k: getattr(config, f"AZURE_OPENAI_{k}_NAME") for k in ["KEY", "ENDPOINT", "DEPLOYMENT", "API_VERSION"]} }
+    missing_vars = [key for key, name in required_env_keys.items() if not os.getenv(name)]
+    if missing_vars:
+        st.error(f"選択された.envファイル `{os.path.basename(st.session_state['selected_env_file'])}` に必要な環境変数が設定されていません: {', '.join(missing_vars)}")
         st.stop()
 
     try:
-        client = AzureOpenAI(
-            api_key=api_key,
-            azure_endpoint=azure_endpoint,
-            api_version=api_version,
-        )
+        client = AzureOpenAI(api_key=env_vars['api_key'], azure_endpoint=env_vars['azure_endpoint'], api_version=env_vars['api_version'])
     except Exception as e:
-        st.error(f"Azure OpenAIクライアントの初期化に失敗しました: {e}")
+        st.error(config.UITexts.CLIENT_INIT_ERROR.format(e=e))
         st.stop()
 
-    # セッションステート初期化
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "system_role_defined" not in st.session_state:
-        st.session_state.system_role_defined = False
-    if "total_usage" not in st.session_state:
-        st.session_state.total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-    if "is_generating" not in st.session_state:
-        st.session_state.is_generating = False
-    if "last_usage_info" not in st.session_state:
-        st.session_state.last_usage_info = None
-    # マルチコード対応: 単一の文字列からリストに変更
-    if "python_canvases" not in st.session_state:
-        st.session_state.python_canvases = ["# ここにコードを書いてください\n"]
-    if "multi_code_enabled" not in st.session_state:
-        st.session_state.multi_code_enabled = False
-    if "stop_generation" not in st.session_state:
-        st.session_state.stop_generation = False
-    # 改善点: Canvasの再描画を制御するためのカウンタ
-    if "canvas_key_counter" not in st.session_state:
-        st.session_state.canvas_key_counter = 0
-
-    # サイドバー
-    with st.sidebar:
-        st.header("設定")
-        if st.button("会話履歴をリセット", use_container_width=True, disabled=st.session_state.is_generating):
-            st.session_state.messages = []
-            st.session_state.system_role_defined = False
-            st.session_state.total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-            st.session_state.last_usage_info = None
-            st.session_state.python_canvases = ["# ここにコードを書いてください\n"]
-            st.session_state.multi_code_enabled = False
+    # --- メインコンテンツ ---
+    if not st.session_state['system_role_defined']:
+        st.subheader(config.UITexts.SYSTEM_PROMPT_HEADER)
+        system_prompt_input = st.text_area(config.UITexts.SYSTEM_PROMPT_TEXT_AREA_LABEL, value=PROMPTS.get("system", {}).get("text", ""), height=300)
+        if st.button(config.UITexts.START_CHAT_BUTTON, type="primary"):
+            st.session_state['messages'] = [{"role": "system", "content": system_prompt_input}]
+            st.session_state['system_role_defined'] = True
             st.rerun()
+        st.stop()
 
-        st.info("`codex-mini` はCLIタスクに特化しているため、コード生成やスクリプト編集で真価を発揮します。")
+    for message in st.session_state['messages']:
+        if message["role"] != "system":
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"].replace('\n', '  \n'))
 
-        st.subheader("チャット履歴 (JSON)")
-        if st.session_state.is_generating:
-            st.warning("AIの回答が完了していません。完了後に保存してください。")
-        else:
-            if st.session_state.messages:
-                # Canvasのコードも一緒に保存する
-                history_data = {
-                    "messages": st.session_state.messages,
-                    "python_canvases": st.session_state.python_canvases
-                }
-                history_json = json.dumps(history_data, ensure_ascii=False, indent=2)
-                st.download_button(
-                    label="履歴を JSON でダウンロード",
-                    data=history_json,
-                    file_name=f"chat_session_{int(time.time())}.json",
-                    mime="application/json",
-                    use_container_width=True,
-                )
-
-        st.file_uploader(
-            label="JSON ファイルをアップロードして読み込み",
-            type="json",
-            key="history_uploader",
-            on_change=load_history,
-            disabled=st.session_state.is_generating,
+    if st.session_state['messages'][-1]["role"] == "assistant" and st.session_state['last_usage_info']:
+        usage = st.session_state['last_usage_info']
+        max_token = env_vars.get('max_token')
+        token_display = f"{usage['total_tokens']:,}"
+        if max_token and max_token.isdigit():
+            token_display += f"/{int(max_token):,}"
+        elif max_token:
+            token_display += f"/{max_token}"
+        usage_text = (
+            f"今回のトークン数: {token_display} (入力: {usage['input_tokens']:,}, 出力: {usage['output_tokens']:,}) | "
+            f"累計トークン数: {st.session_state['total_usage']['total_tokens']:,}"
         )
-        
-        # --- Pythonコードエディタ (Canvas) ---
-        st.subheader("🔧 コードエディタ")
+        st.caption(usage_text)
 
-        multi_code_enabled = st.checkbox("マルチコードを有効にする", value=st.session_state.multi_code_enabled)
-
-        if multi_code_enabled != st.session_state.multi_code_enabled:
-            st.session_state.multi_code_enabled = multi_code_enabled
-            st.session_state.canvas_key_counter += 1
+    if st.session_state['is_generating']:
+        if st.button(config.UITexts.STOP_GENERATION_BUTTON):
+            st.session_state['stop_generation'] = True
             st.rerun()
 
-        if multi_code_enabled and len(st.session_state.python_canvases) < MAX_CANVASES:
-            if st.button("次のコードを追加", use_container_width=True):
-                st.session_state.python_canvases.append("# ここにコードを書いてください\n")
-                st.session_state.canvas_key_counter += 1
-                st.rerun()
+    if prompt := st.chat_input(config.UITexts.CHAT_INPUT_PLACEHOLDER, disabled=st.session_state['is_generating']):
+        st.session_state['messages'].append({"role": "user", "content": prompt})
+        st.session_state['is_generating'] = True
+        st.session_state['stop_generation'] = False
+        st.rerun()
 
-        if st.session_state.multi_code_enabled:
-            # --- マルチコードモード ---
-            for i, canvas_content in enumerate(st.session_state.python_canvases):
-                st.write(f"**Canvas-{i + 1}**")
-                updated_content = st_ace(
-                    value=canvas_content,
-                    language="python",
-                    theme="monokai",
-                    key=f"python_canvas_editor_{i}_{st.session_state.canvas_key_counter}",
-                    auto_update=True,
-                )
-                if updated_content != canvas_content:
-                    st.session_state.python_canvases[i] = updated_content
-                    st.session_state.canvas_key_counter += 1
-                    st.rerun()
-
-                # --- Canvasごとの個別操作ボタン ---
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("クリア", key=f"clear_canvas_{i}", use_container_width=True):
-                        st.session_state.python_canvases[i] = "# ここにコードを書いてください\n"
-                        st.session_state.canvas_key_counter += 1
-                        st.rerun()
-                with col2:
-                    if st.button("レビュー", key=f"review_canvas_{i}", use_container_width=True):
-                        review_prompt = f"### 参考コード (Canvas-{i+1})\nこのCanvasのコードをレビューし、改善点を提案してください。"
-                        st.session_state.messages.append({"role": "user", "content": review_prompt})
-                        st.session_state.is_generating = True
-                        st.session_state.stop_generation = False
-                        st.session_state.last_usage_info = None
-                        st.rerun()
-                with col3:
-                    if st.button("検証", key=f"validate_canvas_{i}", use_container_width=True, help=f"pylintでCanvas-{i+1}のコードを検証し、結果をAIが分析します。"):
-                        with st.spinner(f"Canvas-{i+1} を検証中..."):
-                            canvas_code = st.session_state.python_canvases[i]
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
-                                st.toast(f"Canvas-{i+1}には検証するコードがありません。", icon="⚠️")
-                            else:
-                                code_for_prompt = f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
-                                processed_code = canvas_code.replace('\r\n', '\n')
-                                tmp_file_path = ""
-                                pylint_report = ""
-                                try:
-                                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                        tmp_file_path = tmp_file.name
-                                        tmp_file.write(processed_code)
-                                        tmp_file.flush()
-                                    result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                    issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                    if issues:
-                                        cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                        pylint_report = "\n".join(cleaned_issues)
-                                finally:
-                                    if os.path.exists(tmp_file_path):
-                                        os.remove(tmp_file_path)
-
-                                if not pylint_report.strip():
-                                    st.sidebar.success(f"✅ Canvas-{i+1}: pylint検証完了。問題なし。")
-                                else:
-                                    validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
-以下のコードと、それに対するpylintの解析レポートをレビューしてください。
-# 前提条件
-- このコードはWindows環境で実行されます。
-- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
-# 解析対象のコード
-{code_for_prompt}
-# pylintの解析レポート
-{pylint_report}
-
-# あなたのタスク
-上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
-- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
-- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
-"""
-                                    system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                                    st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                                    st.session_state.is_generating = True
-                                    st.session_state.stop_generation = False
-                                    st.session_state.last_usage_info = None
-                                    st.rerun()
-                st.divider()
-            
-            # --- 全Canvas対象の一括操作ボタン ---
-            st.subheader("一括操作")
-            g_col1, g_col2, g_col3 = st.columns(3)
-            with g_col1:
-                if st.button("すべてクリア", key="clear_all_canvases", use_container_width=True):
-                    st.session_state.python_canvases = ["# ここにコードを書いてください\n"] * len(st.session_state.python_canvases)
-                    st.session_state.canvas_key_counter += 1
-                    st.rerun()
-            with g_col2:
-                if st.button("すべてレビュー", key="review_all_canvases", use_container_width=True):
-                    review_prompt = "### 参考コード (Canvas)\n上記のすべてのコードをレビューし、改善点を提案してください。"
-                    st.session_state.messages.append({"role": "user", "content": review_prompt})
-                    st.session_state.is_generating = True
-                    st.session_state.stop_generation = False
-                    st.session_state.last_usage_info = None
-                    st.rerun()
-            with g_col3:
-                if st.button("すべて検証", key="validate_all_canvases_ai", use_container_width=True, help="pylintですべてのコードを検証し、結果をAIが分析して重要度を判断します。"):
-                    # This is the original full validation logic
-                    with st.spinner("すべてのコードを検証し、AIが分析しています..."):
-                        full_pylint_report = ""
-                        code_for_prompt = ""
-                        has_code_to_validate = False
-                        for i, canvas_code in enumerate(st.session_state.python_canvases):
-                            if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
-                                continue
-                            has_code_to_validate = True
-                            code_for_prompt += f"\n\n# 解析対象のコード (Canvas-{i + 1})\n```python\n{canvas_code}\n```"
-                            processed_code = canvas_code.replace('\r\n', '\n')
-                            tmp_file_path = ""
-                            try:
-                                with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                    tmp_file_path = tmp_file.name
-                                    tmp_file.write(processed_code)
-                                    tmp_file.flush()
-                                result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                if issues:
-                                    cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                    full_pylint_report += f"# Canvas-{i + 1} のpylintレポート\n" + "\n".join(cleaned_issues) + "\n"
-                            finally:
-                                if os.path.exists(tmp_file_path):
-                                    os.remove(tmp_file_path)
-                        
-                        if not has_code_to_validate:
-                            st.toast("検証するコードがありません。", icon="⚠️")
-                        elif not full_pylint_report.strip():
-                            st.sidebar.success("✅ pylintによる検証が完了しました。問題は見つかりませんでした。")
-                        else:
-                            validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
-以下のコードと、それに対するpylintの解析レポートをレビューしてください。
-# 前提条件
-- このコードはWindows環境で実行されます。
-- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
-# 解析対象のコード
-{code_for_prompt}
-# pylintの解析レポート
-{full_pylint_report}
-
-# あなたのタスク
-上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
-- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
-- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
-"""
-                            system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                            st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                            st.session_state.is_generating = True
-                            st.session_state.stop_generation = False
-                            st.session_state.last_usage_info = None
-                            st.rerun()
-
-        else:
-            # --- シングルコードモード ---
-            st.session_state.python_canvases = [st.session_state.python_canvases[0]]
-            updated_content = st_ace(
-                value=st.session_state.python_canvases[0],
-                language="python",
-                theme="monokai",
-                key=f"python_canvas_editor_0_{st.session_state.canvas_key_counter}",
-                auto_update=True,
-            )
-            if updated_content != st.session_state.python_canvases[0]:
-                st.session_state.python_canvases[0] = updated_content
-                st.session_state.canvas_key_counter += 1
-                st.rerun()
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if st.button("クリア", key="clear_canvas_single", use_container_width=True):
-                    st.session_state.python_canvases[0] = "# ここにコードを書いてください\n"
-                    st.session_state.canvas_key_counter += 1
-                    st.rerun()
-            with col2:
-                if st.button("レビュー", key="review_canvas_single", use_container_width=True):
-                    review_prompt = "### 参考コード (Canvas)\n上記のコードをレビューし、改善点を提案してください。"
-                    st.session_state.messages.append({"role": "user", "content": review_prompt})
-                    st.session_state.is_generating = True
-                    st.session_state.stop_generation = False
-                    st.session_state.last_usage_info = None
-                    st.rerun()
-            with col3:
-                if st.button("検証", key="validate_canvas_single", use_container_width=True, help="pylintでこのコードを検証し、結果をAIが分析します。"):
-                    # This is the same logic as the individual button in multi-code mode, but for index 0
-                    with st.spinner(f"コードを検証し、AIが分析しています..."):
-                        canvas_code = st.session_state.python_canvases[0]
-                        if not canvas_code or canvas_code.strip() == "" or canvas_code.strip() == "# ここにコードを書いてください":
-                            st.toast("検証するコードがありません。", icon="⚠️")
-                        else:
-                            code_for_prompt = f"\n\n# 解析対象のコード\n```python\n{canvas_code}\n```"
-                            processed_code = canvas_code.replace('\r\n', '\n')
-                            tmp_file_path = ""
-                            pylint_report = ""
-                            try:
-                                with tempfile.NamedTemporaryFile(mode='w+', suffix='.py', delete=False, encoding='utf-8') as tmp_file:
-                                    tmp_file_path = tmp_file.name
-                                    tmp_file.write(processed_code)
-                                    tmp_file.flush()
-                                result = subprocess.run([sys.executable, "-m", "pylint", tmp_file_path], capture_output=True, text=True, encoding='utf-8', check=False)
-                                issues = [line for line in result.stdout.splitlines() if line.strip() and not line.startswith('*') and not line.startswith('-') and 'Your code has been rated' not in line]
-                                if issues:
-                                    cleaned_issues = [issue.replace(f'{tmp_file_path}:', 'Line ') for issue in issues]
-                                    pylint_report = "\n".join(cleaned_issues)
-                            finally:
-                                if os.path.exists(tmp_file_path):
-                                    os.remove(tmp_file_path)
-
-                            if not pylint_report.strip():
-                                st.sidebar.success("✅ pylint検証完了。問題なし。")
-                            else:
-                                validation_prompt = f"""あなたは優秀なPython開発アシスタントです。
-以下のコードと、それに対するpylintの解析レポートをレビューしてください。
-# 前提条件
-- このコードはWindows環境で実行されます。
-- 改行コードの違い(CRLF)、末尾の空白、長すぎる行、変数名の命名規則など、コーディングスタイルに関する指摘は、動作に直接的な影響がない限り無視してください。
-# 解析対象のコード
-{code_for_prompt}
-# pylintの解析レポート
-{pylint_report}
-
-# あなたのタスク
-上記のレポートの中から、「Windowsでの動作に致命的な影響を与える可能性のある、修正必須のエラー」のみを特定してください。
-- **修正必須のエラーがある場合：** その内容と、なぜそれが問題なのかを簡潔に説明し、修正案を提示してください。
-- **修正必須のエラーがない場合：** 「pylintでいくつかの指摘がありましたが、Windows環境での動作を妨げる致命的なエラーではありません。」とだけ回答してください。
-"""
-                                system_message = st.session_state.messages[0] if st.session_state.messages and st.session_state.messages[0]["role"] == "system" else {"role": "system", "content": ""}
-                                st.session_state.special_generation_messages = [system_message, {"role": "user", "content": validation_prompt}]
-                                st.session_state.is_generating = True
-                                st.session_state.stop_generation = False
-                                st.session_state.last_usage_info = None
-                                st.rerun()
-
-        st.header("デバッグ")
-        debug_mode = st.checkbox("デバッグモードを有効にする", help="有効にすると、APIからの生の応答データがチャット欄に表示されます。", disabled=st.session_state.is_generating)
-
-
-    # システムプロンプト設定
-    if not st.session_state.system_role_defined:
-        st.subheader("最初にAIの役割（システムプロンプト）を設定してください")
-        default_prompt = """あなたは、コマンドライン操作とスクリプト生成に特化した専門家AI、codex-miniです。
-以下のタスクを正確かつ効率的に実行してください。
-
-1.  **自然言語をシェルコマンドに変換する:** "カレントディレクトリのファイルをすべてリストして" -> `ls -l`
-2.  **スクリプトの生成と編集:** Python, Bash, PowerShellなどのスクリプトを生成・修正する。
-3.  **コードのリファクタリング:** 提示されたコードをより効率的、または読みやすく書き換える。
-4.  **参考コードの利用:** プロンプトに「### 参考コード (Canvas)」が含まれている場合、そのコードを最優先の文脈として扱い、質問への回答やコードの修正を行ってください。
-5.  **出典の明記:** コードのレビュー、修正、または特定のコード部分について言及する際は、必ず `(出典: Canvas-1, 15-20行目)` の形式で、参照したCanvas番号と行番号を明記してください。これは回答の信頼性を担保するために非常に重要です。
-
-常に簡潔で、直接的で、実行可能なコードを優先して回答してください。説明は必要最小限に留めてください。
-"""
-        system_prompt_input = st.text_area("AIの役割", value=default_prompt, height=300)
-        if st.button("この役割でチャットを開始する", type="primary"):
-            if system_prompt_input:
-                st.session_state.messages = [{"role": "system", "content": system_prompt_input}]
-                st.session_state.system_role_defined = True
-                st.rerun()
-            else:
-                st.warning("役割を入力してください。")
-
-    # メインチャット画面
-    else:
-        # AI検証機能からの特別なリクエストでない場合のみ、通常のメッセージ履歴を表示
-        if "special_generation_messages" not in st.session_state:
-            for message in st.session_state.messages:
-                if message["role"] != "system":
-                    with st.chat_message(message["role"]):
-                        # 改行文字(\n)を、Markdownの改行(スペース2つ + \n)に置換する
-                        st.markdown(message["content"].replace('\n', '  \n'))
-        
-        if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant" and st.session_state.last_usage_info:
-            usage = st.session_state.last_usage_info
-            usage_text = (
-                f"今回のトークン数: {usage['total_tokens']} (入力: {usage['input_tokens']} / **最大: {MAX_INPUT_TOKENS:,}**, 出力: {usage['output_tokens']}) | "
-                f"累計トークン数: {st.session_state.total_usage['total_tokens']}"
-            )
-            st.caption(usage_text)
-
-        # 応答中に停止ボタンを表示
-        if st.session_state.is_generating:
-            if st.button("生成を停止", key="stop_generation_button"):
-                st.session_state.stop_generation = True
-                # 即座に反映させるためにリラン
-                st.rerun()
-
-        if prompt := st.chat_input("シェルコマンドの生成やスクリプト作成の指示を入力...", disabled=st.session_state.is_generating):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            st.session_state.is_generating = True
-            st.session_state.stop_generation = False # 新しい生成が始まるのでリセット
-            st.session_state.last_usage_info = None
-            st.rerun() 
-
-    # ストリーミングでAI応答を生成
-    if st.session_state.get("is_generating"):
+    if st.session_state['is_generating']:
         with st.chat_message("assistant"):
+            placeholder = st.empty()
             full_response = ""
             final_response_object = None
-            placeholder = st.empty()
-            is_special_generation = "special_generation_messages" in st.session_state
+            
+            messages_to_send = st.session_state.get("special_generation_messages", st.session_state['messages'])
+            is_special = "special_generation_messages" in st.session_state
+            if is_special:
+                del st.session_state["special_generation_messages"]
+            
+            canvases_to_send = [] if is_special else st.session_state['python_canvases']
+            input_prompt = utils.format_history_for_input(messages_to_send, canvases_to_send)
 
             try:
-                # AI検証ボタンからの特別なリクエストか、通常のチャットかを判断
-                if is_special_generation:
-                    input_prompt = format_history_for_input(
-                        st.session_state.special_generation_messages,
-                        [] # キャンバスコードはプロンプトに内包されているため不要
-                    )
-                    # 使用後は削除して通常モードに戻す
-                    del st.session_state.special_generation_messages
-                else:
-                    # 通常のチャットの場合
-                    input_prompt = format_history_for_input(
-                        st.session_state.messages,
-                        st.session_state.python_canvases
-                    )
-
-                stream = client.responses.create(
-                    model=deployment_name,
-                    input=input_prompt,
-                    stream=True,
-                )
-                
-                if debug_mode:
-                    debug_area = st.expander("デバッグ出力").container()
-
+                stream = client.responses.create(model=env_vars['deployment_name'], input=input_prompt, stream=True)
                 for chunk in stream:
-                    # 停止フラグをチェック
-                    if st.session_state.get("stop_generation"):
-                        st.warning("ユーザーによって応答の生成が中断されました。")
+                    if st.session_state['stop_generation']:
+                        st.warning(config.UITexts.GENERATION_STOPPED_WARNING)
                         break
-
-                    if debug_mode:
-                        debug_area.json(chunk.model_dump_json(indent=2))
-
                     if hasattr(chunk, 'type'):
-                        if chunk.type == 'response.output_text.delta':
-                            if hasattr(chunk, 'delta') and chunk.delta:
-                                full_response += chunk.delta
-                                placeholder.markdown(full_response + "▌")
-                        elif chunk.type == 'response.completed':
-                            if hasattr(chunk, 'response'):
-                                final_response_object = chunk.response
-                
+                        if chunk.type == 'response.output_text.delta' and hasattr(chunk, 'delta') and chunk.delta:
+                            full_response += chunk.delta
+                            placeholder.markdown(full_response + "▌")
+                        elif chunk.type == 'response.completed' and hasattr(chunk, 'response'):
+                            final_response_object = chunk.response
                 placeholder.markdown(full_response)
-
             except Exception as e:
-                st.error(f"APIリクエスト中にエラーが発生しました: {e}")
-                st.info("エンドポイント、デプロイ名、APIキー等が正しいか確認してください。")
+                st.error(config.UITexts.API_REQUEST_ERROR.format(e=e))
             finally:
-                st.session_state.is_generating = False
-                st.session_state.stop_generation = False # 完了またはエラー時にリセット
-            
-            if final_response_object:
-                usage = getattr(final_response_object, 'usage', None)
-                finish_details = getattr(final_response_object, 'finish_details', None)
-
-                if not full_response and finish_details:
-                    if finish_details.type == 'stop' and getattr(finish_details, 'stop', None) == 'content_filter':
-                        st.error("応答がコンテンツフィルターによってブロックされました。入力内容を変更して再度お試しください。")
-                    else:
-                        st.warning(f"AIが空の応答を返しました。(終了理由: {finish_details.type}) プロンプトが適切でない可能性があります。")
-                
-                if usage:
-                    st.session_state.total_usage["input_tokens"] += usage.input_tokens
-                    st.session_state.total_usage["output_tokens"] += usage.output_tokens
-                    st.session_state.total_usage["total_tokens"] += usage.total_tokens
-                    st.session_state.last_usage_info = {
-                        "total_tokens": usage.total_tokens,
-                        "input_tokens": usage.input_tokens,
-                        "output_tokens": usage.output_tokens,
-                    }
-
-            if full_response:
-                # 通常のチャット履歴にアシスタントの最終回答を追加
-                st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            st.rerun() 
+                st.session_state['is_generating'] = False
+                st.session_state['stop_generation'] = False
+                if final_response_object and hasattr(final_response_object, 'usage'):
+                    usage = final_response_object.usage
+                    st.session_state['total_usage'].update({
+                        "input_tokens": st.session_state['total_usage']["input_tokens"] + usage.input_tokens,
+                        "output_tokens": st.session_state['total_usage']["output_tokens"] + usage.output_tokens,
+                        "total_tokens": st.session_state['total_usage']["total_tokens"] + usage.total_tokens
+                    })
+                    st.session_state['last_usage_info'] = {"total_tokens": usage.total_tokens, "input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+                if full_response:
+                    st.session_state['messages'].append({"role": "assistant", "content": full_response})
+                st.rerun()
 
 if __name__ == "__main__":
+    if __package__ is None:
+        PACKAGE_PARENT = '..'
+        SCRIPT_DIR = os.path.dirname(os.path.realpath(os.path.join(os.getcwd(), os.path.expanduser(__file__))))
+        sys.path.append(os.path.normpath(os.path.join(SCRIPT_DIR, PACKAGE_PARENT)))
+        from codex_chat import config, utils
+    
     run_chatbot_app()
+

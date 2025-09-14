@@ -1,3 +1,21 @@
+## [0.2.0] - 2025-09-14  
+  
+### Comment  
+- 大規模アップデートを実施。
+- main.pyが大規模になったため、機能分担としてpython実行ファイルを分割。
+
+### Added  
+- config.py 追加  
+- main_runner.py 追加  
+- prompts.yaml 追加  
+- utils.py 追加  
+  
+### Fixed  
+- ドラッグ&ドロップによるCanvas記述モードを搭載
+- AIモデル選択機能を追加（envフォルダ検索）
+  
+---
+  
 ## [0.1.5] - 2025-08-31  
   
 ### Fixed  
