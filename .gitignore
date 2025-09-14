@@ -210,7 +210,6 @@ __marimo__/
 old/
 activate.bat
 raw_data/
-old/
 experiments/
 build.txt
 *report.txt

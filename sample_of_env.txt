@@ -1,0 +1,19 @@
+# Azure OpenAI Service Configuration
+
+# "/env/*.env"のように、各自の環境で「.env」拡張子に変更して使用下さい。
+# 自身のAzure OpenAI環境に合わせて、以下の値を設定してください。
+
+# APIのバージョン (例: 2025-04-01-preview)
+AZURE_OPENAI_API_VERSION="xxxxx"
+
+# デプロイしたモデル名 (例: codex-mini)
+AZURE_OPENAI_DEPLOYMENT="xxxxx"
+
+# Azure OpenAIのエンドポイントURL
+AZURE_OPENAI_ENDPOINT="https://xxxxxx.openai.azure.com/"
+
+# Azure OpenAIのAPIキー
+AZURE_OPENAI_KEY="xxxxxx"
+
+#MAX token (例: 200000)
+MAX_TOKEN="xxxxx"
