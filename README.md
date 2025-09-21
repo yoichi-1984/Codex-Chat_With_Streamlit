@@ -57,12 +57,22 @@ CLIラッパー (`main_runner.py`) は `streamlit run main.py` を自動で呼�
 git clone https://github.com/ユーザ名/codex-mini.git  
 cd codex-mini  
 python3 -m venv .env  
-source .env/bin/activate  
-python.exe -m pip install --upgrade pip  
+source .env/bin/activate   
 python.exe -m pip install --upgrade pip setuptools  
-pip install -r requirements.txt  
+pip install -e .  
 ```  
-  
+もしくは
+```bash  
+git clone https://github.com/ユーザ名/codex-mini.git  
+cd codex-mini  
+python3 -m venv .env  
+source .env/bin/activate   
+pip install build
+python -m build
+```  
+　*dist/にあるwheelファイルを仮想環境直下に移動*
+install.batを実行
+
 ---  
 ## 環境設定  
   
