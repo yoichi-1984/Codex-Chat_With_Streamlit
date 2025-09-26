@@ -75,6 +75,9 @@ def run_chatbot_app():
     for key, value in config.SESSION_STATE_DEFAULTS.items():
         if key not in st.session_state:
             st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+
+    if 'reasoning_effort' not in st.session_state:
+        st.session_state['reasoning_effort'] = 'high'  # デフォルト値を 'high' に設定
     
     # --- ボタン/ウィジェット操作のコールバック関数 ---
     def handle_clear(canvas_index):
@@ -111,10 +114,12 @@ def run_chatbot_app():
     # --- サイドバー ---
     with st.sidebar:
         st.header("モデル設定")
-
         def on_env_change():
+            # .envを切り替えたら会話はリセットするが、ウィジェットの設定は維持する
             for key, value in config.SESSION_STATE_DEFAULTS.items():
-                 st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
+                if key in ['reasoning_effort']:  # このキーはリセットしない
+                    continue
+                st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
 
         selected_env = st.selectbox(
             label="使用するAIモデル (.env) を選択",
@@ -126,9 +131,20 @@ def run_chatbot_app():
             disabled=st.session_state['system_role_defined'] or st.session_state['is_generating']
         )
 
+        # reasoning effort を選択するためのドロップダウンリスト
+        st.selectbox(
+            label="Reasoning Effort を選択",
+            options=['high', 'medium', 'low'],
+            key='reasoning_effort',
+            help="AIの思考の深さを変更します。いつでも切り替え可能です。"
+        )
+
         st.header(config.UITexts.SIDEBAR_HEADER)
         if st.button(config.UITexts.RESET_BUTTON_LABEL, use_container_width=True, disabled=st.session_state['is_generating']):
+            # 会話をリセットするが、ウィジェットの設定は維持する
             for key, value in config.SESSION_STATE_DEFAULTS.items():
+                if key in ['reasoning_effort', 'selected_env_file']: # このキーはリセットしない
+                    continue
                 st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
             st.rerun()
 
@@ -136,14 +152,12 @@ def run_chatbot_app():
 
         st.subheader(config.UITexts.HISTORY_SUBHEADER)
         if not st.session_state['is_generating'] and st.session_state['messages']:
-            # --- ★★★★★ 変更点 (ここから) ★★★★★ ---
             history_data = {
                 "messages": st.session_state['messages'],
                 "python_canvases": st.session_state['python_canvases'],
                 "selected_env_file": st.session_state.get('selected_env_file'),
                 "multi_code_enabled": st.session_state['multi_code_enabled']
             }
-            # --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
             st.download_button(
                 label=config.UITexts.DOWNLOAD_HISTORY_BUTTON,
                 data=json.dumps(history_data, ensure_ascii=False, indent=2),
@@ -185,15 +199,13 @@ def run_chatbot_app():
                 uploader_key = f"uploader_{i}_{st.session_state['canvas_key_counter']}"
                 st.file_uploader(
                     f"Canvas-{i+1} にファイルを読み込む",
-                    type=['txt', 'csv', 'py', 'json', 'yaml'],
+                    type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1'],
                     key=uploader_key,
                     on_change=handle_file_upload,
                     args=(i, uploader_key),
                     disabled=st.session_state['is_generating']
                 )
-
                 st.divider()
-
         else: # シングルコードモード
             if len(st.session_state['python_canvases']) > 1:
                 st.session_state['python_canvases'] = [st.session_state['python_canvases'][0]]
@@ -211,7 +223,7 @@ def run_chatbot_app():
             uploader_key_single = f"uploader_single_{st.session_state['canvas_key_counter']}"
             st.file_uploader(
                 "Canvasにファイルを読み込む",
-                type=['txt', 'csv', 'py', 'json', 'yaml'],
+                type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1'],
                 key=uploader_key_single,
                 on_change=handle_file_upload,
                 args=(0, uploader_key_single),
@@ -304,7 +316,19 @@ def run_chatbot_app():
             input_prompt = utils.format_history_for_input(messages_to_send, canvases_to_send)
 
             try:
-                stream = client.responses.create(model=env_vars['deployment_name'], input=input_prompt, stream=True)
+                # --- ★★★★★ 変更点 ④ (ここから) ★★★★★ ---
+                # セッション状態から選択された reasoning effort を取得
+                selected_effort = st.session_state.get('reasoning_effort', 'medium')
+                
+                stream = client.responses.create(
+                    model=env_vars['deployment_name'], 
+                    input=input_prompt, 
+                    stream=True, 
+                    # 取得した値をAPIに渡す
+                    extra_body={"reasoning": {"effort": selected_effort}}
+                )
+                # --- ★★★★★ 変更点 ④ (ここまで) ★★★★★ ---
+                
                 for chunk in stream:
                     if st.session_state['stop_generation']:
                         st.warning(config.UITexts.GENERATION_STOPPED_WARNING)
