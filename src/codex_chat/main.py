@@ -199,7 +199,7 @@ def run_chatbot_app():
                 uploader_key = f"uploader_{i}_{st.session_state['canvas_key_counter']}"
                 st.file_uploader(
                     f"Canvas-{i+1} にファイルを読み込む",
-                    type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1'],
+                    type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1', 'sln', 'config', 'vbproj', 'xml', 'vb', 'resx', 'myapp', 'settings', 'manifest', 'licx'],
                     key=uploader_key,
                     on_change=handle_file_upload,
                     args=(i, uploader_key),
@@ -223,7 +223,7 @@ def run_chatbot_app():
             uploader_key_single = f"uploader_single_{st.session_state['canvas_key_counter']}"
             st.file_uploader(
                 "Canvasにファイルを読み込む",
-                type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1'],
+                type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1', 'sln', 'config', 'vbproj', 'xml', 'vb', 'resx', 'myapp', 'settings', 'manifest', 'licx'],
                 key=uploader_key_single,
                 on_change=handle_file_upload,
                 args=(0, uploader_key_single),
