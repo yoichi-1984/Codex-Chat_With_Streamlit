@@ -66,6 +66,8 @@ def run_chatbot_app():
     st.title(config.UITexts.APP_TITLE)
     
     PROMPTS = utils.load_prompts()
+    APP_CONFIG = utils.load_app_config()
+    supported_types = APP_CONFIG.get("file_uploader", {}).get("supported_extensions", [])
     
     env_files = utils.find_env_files()
     if not env_files:
@@ -199,7 +201,7 @@ def run_chatbot_app():
                 uploader_key = f"uploader_{i}_{st.session_state['canvas_key_counter']}"
                 st.file_uploader(
                     f"Canvas-{i+1} にファイルを読み込む",
-                    type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1', 'sln', 'config', 'vbproj', 'xml', 'vb', 'resx', 'myapp', 'settings', 'manifest', 'licx'],
+                    type= supported_types,
                     key=uploader_key,
                     on_change=handle_file_upload,
                     args=(i, uploader_key),
@@ -223,7 +225,7 @@ def run_chatbot_app():
             uploader_key_single = f"uploader_single_{st.session_state['canvas_key_counter']}"
             st.file_uploader(
                 "Canvasにファイルを読み込む",
-                type=['txt', 'csv', 'py', 'json', 'yaml', 'bat', 'ps1', 'sln', 'config', 'vbproj', 'xml', 'vb', 'resx', 'myapp', 'settings', 'manifest', 'licx'],
+                type= supported_types,
                 key=uploader_key_single,
                 on_change=handle_file_upload,
                 args=(0, uploader_key_single),

@@ -118,3 +118,17 @@ def run_pylint_validation(canvas_code, canvas_index, prompts):
     st.session_state['is_generating'] = True
     st.session_state['stop_generation'] = False
     st.rerun()
+
+def load_app_config():
+    """
+    パッケージ内のconfig.yamlを一度だけ読み込み、結果をキャッシュする
+    """
+    try:
+        with resources.open_text("codex_chat", "config.yaml") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        st.error("重大なエラー: config.yamlが見つかりません。")
+        st.stop()
+    except Exception as e:
+        st.error(f"重大なエラー: config.yamlの読み込みに失敗しました: {e}")
+        st.stop()
