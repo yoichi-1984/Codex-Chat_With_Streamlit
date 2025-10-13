@@ -1,33 +1,36 @@
-    [build-system]
-    requires = ["setuptools>=61.0", "wheel"]
-    build-backend = "setuptools.build_meta"
-    
-    [project]
-    name = "codex-chat"
-    version = "0.2.3"
-    description = "Codex-chat with streamlit"
-    authors = [
-        { name = "yoichi-1984", email = "yoichi.1984.engineer@gmail.com" },
-    ]
-    readme = "README.md"
-    requires-python = ">=3.11"
-    classifiers = [
-        "Programming Language :: Python :: 3.11",
-        "License :: OSI Approved :: Apache License 2.0",
-        "Operating System :: Windows 11",
-    ]
-    dependencies = [
-        "streamlit",
-        "openai",
-        "python-dotenv",
-        "streamlit-ace",
-        "build",
-        "pylint",
-        "pyyaml"
-    ]
-    
-    [project.scripts]
-    codex-chat = "codex_chat.main_runner:run"
-    
-    [tool.setuptools.packages.find]
-    where = ["src"]
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-chat"
+version = "0.2.4"
+description = "Codex-chat with streamlit"
+authors = [
+    { name = "yoichi-1984", email = "yoichi.1984.engineer@gmail.com" },
+]
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache License 2.0",
+    "Operating System :: Windows 11",
+]
+dependencies = [
+    "streamlit",
+    "openai",
+    "python-dotenv",
+    "streamlit-ace",
+    "build",
+    "pylint",
+    "pyyaml"
+]
+
+[project.scripts]
+codex-chat = "codex_chat.main_runner:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+codex_chat = ["*.yaml"]
