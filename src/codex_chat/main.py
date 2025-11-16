@@ -15,11 +15,17 @@ from codex_chat import sidebar
 
 # --- ヘルパー関数 (アプリケーション固有) ---
 
-def load_history():
+# --- ★★★★★ 変更点 (ここから) ★★★★★ ---
+# def load_history():
+def load_history(uploader_key):
+# --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
     """
     アップロードされたJSONから会話履歴とCanvasコードを読み込む
     """
-    uploaded_file = st.session_state['history_uploader']
+    # --- ★★★★★ 変更点 (ここから) ★★★★★ ---
+    # uploaded_file = st.session_state['history_uploader']
+    uploaded_file = st.session_state.get(uploader_key)
+    # --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
     if not uploaded_file:
         return
     try:
@@ -29,10 +35,8 @@ def load_history():
             if "python_canvases" in loaded_data:
                 st.session_state['python_canvases'] = loaded_data["python_canvases"]
             
-            # --- ★★★★★ 変更点 (ここから) ★★★★★ ---
             if "multi_code_enabled" in loaded_data:
                 st.session_state['multi_code_enabled'] = loaded_data["multi_code_enabled"]
-            # --- ★★★★★ 変更点 (ここまで) ★★★★★ ---
 
             if "selected_env_file" in loaded_data:
                 env_files = utils.find_env_files()
@@ -80,7 +84,7 @@ def run_chatbot_app():
             st.session_state[key] = value.copy() if isinstance(value, (dict, list)) else value
 
     if 'reasoning_effort' not in st.session_state:
-        st.session_state['reasoning_effort'] = 'high'  # デフォルト値を 'high' に設定
+        st.session_state['reasoning_effort'] = 'medium'  # デフォルト値を 'medium' に設定
     
     # --- ボタン/ウィジェット操作のコールバック関数 ---
     def handle_clear(canvas_index):
@@ -231,8 +235,8 @@ def run_chatbot_app():
             finally:
                 st.session_state['is_generating'] = False
                 st.session_state['stop_generation'] = False
-                if final_response_object and hasattr(final_response_object, 'usage'):
-                    usage = final_response_object.usage
+                if final_response_object and hasattr(final_response_object, 'response'):
+                    usage = final_response_object.response.usage
                     st.session_state['total_usage'].update({
                         "input_tokens": st.session_state['total_usage']["input_tokens"] + usage.input_tokens,
                         "output_tokens": st.session_state['total_usage']["output_tokens"] + usage.output_tokens,
@@ -251,4 +255,4 @@ if __name__ == "__main__":
         from codex_chat import config, utils
     
     run_chatbot_app()
-
+    
